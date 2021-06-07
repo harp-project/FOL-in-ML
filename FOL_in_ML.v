@@ -75,15 +75,14 @@ Fixpoint add_forall_prefix (n : nat) (base : Pattern) : Pattern :=
   end.
 Definition convert_sym_ax_form (size : nat) (t : term) : Pattern :=
   match t with
-  | var n    => patt_bound_evar (size+1-n) (*Because we have the "y" with equality need to add 1 to them
-                                             and need to reverse the original order of the argument list*)
+  | var n    => patt_bound_evar (size+1-n) 
   | func f v => patt_bott (*This branch is dead, because in the axiom there is only variables and no function*)
   end.
 
 Definition convertf : nat -> nat + nat :=
   fun x => inr x.
 
-(* We start the conversion from db index 0 *)
+
 Fixpoint convert_term (f : nat -> nat + nat) (t : term) : Pattern :=
   match t with
   | var n'    => match (f n') with
@@ -206,11 +205,7 @@ Notation "'Bot'" := (patt_bott). *)
 Notation "theory ⊢_ML pattern" := (ML_proof_system theory pattern) (at level 1).
 Notation "theory_FOL ⊢_FOL form" := (Hilbert_proof_sys theory_FOL form) (at level 1).
 
-(* Lemma blbabla :
-  @bevar_subst (@sig Σ_funcs Σ_preds eqdec_funcs eqdec_preds)
-   *)
-
-Lemma blabla n (v : VectorDef.t term n): forall (p : Pattern) g (t : term) f n,
+Lemma vector_helper n (v : VectorDef.t term n): forall (p : Pattern) g (t : term) f n,
   (forall (p1 p2 p3 : Pattern), bevar_subst (f p1 p2) p3 n = f (bevar_subst p1 p3 n) (bevar_subst p2 p3 n)) 
   ->
   bevar_subst (Vector.fold_left f p (Vector.map g v)) (g t) n =
@@ -229,69 +224,6 @@ Proof.
   - reflexivity.
   - reflexivity.
 Qed.
-
-(* Lemma convert_form_subst_helper2 : forall t,
-(fun x => match x with |0 => $0 |(S n) => match (S n) with |0 => t`[fun x => $(S x)] |n' => $n' end end) 
-= (up t..).
-Proof.
-  intros. unfold up. apply functional_extensionality. induction x.
-  - reflexivity.
-  - simpl. unfold funcomp. destruct (Nat.eqb x n) eqn:P.
-   + reflexivity.
-   + simpl. epose (Lt.S_pred_pos x _). rewrite e. simpl. reflexivity.
-  Unshelve. admit.
-Admitted. *)
-
-(* Lemma updotdot: forall t, 
-  up t..  = (fun x => match x with |0 => var 0 | 1 => t | (S (S n)) => (var (S (S n))) end).
-Proof.
-  intros. unfold up, scons, funcomp.  apply functional_extensionality. induction x.
-  - reflexivity.
-  - 
-Qed. *)
-
-(*(* TODO: Generalize t.. *)
-Lemma form_subst_convert Φ : forall t n, 
-   (@convert_form Σ_funcs Σ_preds eqdec_funcs eqdec_preds n) (Φ[t..]) = bevar_subst (convert_form n Φ) (convert_term n t`[fun x0 : nat => $(x0+n)]) n.
-Proof.
-  intro t. rewrite <- convert_form_subst_helper1. generalize dependent t.
-  induction Φ; intros.
-  - reflexivity.
-  - simpl. rewrite Vector.map_map. Search Vector.map. epose 
-  (Vector.map_ext _ _ (fun x : term => convert_term n x`[t..]) (fun x => bevar_subst (convert_term n x) (convert_term n t`[fun x0 : nat => $(x0+ n)]) n) _). 
-  rewrite e. rewrite blabla. simpl. rewrite Vector.map_map. reflexivity. reflexivity.
-  - simpl. destruct b; rewrite IHΦ1, IHΦ2; reflexivity.
-  - destruct q.
-    + simpl. unfold up, funcomp, scons.
-Admitted.
-
-(* TODO: Generalize t.. *)
-Lemma form_subst_convert2 Φ : forall t, 
-   (@convert_form Σ_funcs Σ_preds eqdec_funcs eqdec_preds) (Φ[t..]) = bevar_subst (convert_form Φ) (convert_term t) 0.
-Proof.
-  induction Φ; intros.
-  - reflexivity.
-  - simpl. rewrite Vector.map_map. epose 
-  (Vector.map_ext _ _ (fun x : term => convert_term x`[t..]) (fun x => bevar_subst (convert_term x) (convert_term t) 0) _). 
-  rewrite e. rewrite blabla. simpl. rewrite Vector.map_map. reflexivity. reflexivity.
-  - simpl. destruct b; rewrite IHΦ1, IHΦ2; reflexivity.
-  - destruct q.
-    + simpl. rewrite IHΦ. 
-Admitted.  *)
-
-
-(* Version2 *)
-(* Lemma blabla n (v : VectorDef.t term n): forall (p : Pattern) g (t : term) f n,
-  (forall (p1 p2 p3 : Pattern), bevar_subst (f p1 p2) p3 n = f (bevar_subst p1 p3 n) (bevar_subst p2 p3 n)) 
-  ->
-  @bevar_subst (@sig Σ_funcs Σ_preds eqdec_funcs eqdec_preds)  (Vector.fold_left f p (Vector.map g v)) (g t) n =
-  (Vector.fold_left f (bevar_subst p (g t) n) (Vector.map (fun x => bevar_subst x (g t) n) (Vector.map g v))).
-Proof. 
-  induction v.
-  - simpl. reflexivity.
-  - intros. simpl. replace (f (bevar_subst p (g t) n0) (bevar_subst (g h) (g t) n0)) with (bevar_subst (f p (g h)) (g t) n0). 
-  apply IHv. apply H. apply H.
-  Qed. *)
 
 Lemma app_chain_wfca n m (v : VectorDef.t term m): forall (p : Pattern) g f,
   (forall (p1 p2: Pattern), well_formed_closed_aux (f p1 p2) n 0 = (andb (well_formed_closed_aux p1 n 0) (well_formed_closed_aux p2 n 0)))
@@ -395,7 +327,7 @@ induction t0; intros.
     * rewrite e in P. unfold up_ML, convertf in P. destruct x.
       -- simpl. reflexivity.
       -- inversion P.
-    * (* x ≠ 0ból követketik, hogy t.. x az simán pred x lesz... *) admit.
+    * admit.
   + simpl. destruct x eqn:D.
     * simpl. inversion P.
     * simpl. inversion P. reflexivity.
@@ -431,7 +363,6 @@ induction t; intros.
           ** inversion P. destruct n.
             --- simpl. lia.
             --- (* simpl. *) simpl in D1. subst. 
-            (* ha x < n akkor jobb oldalon nem lesz helyettesítés, x < n kijön elvileg D1-ből. *) 
             simpl. Search ">>". admit.
           ** inversion P.
     * destruct n0.
@@ -455,21 +386,6 @@ induction t; intros.
       -- simpl. lia.
       -- simpl.
 Admitted.
-
-  (* induction n; intros.
-  - simpl. destruct t.
-    + simpl. destruct (up_ML convertf n) eqn:P.
-      * simpl. destruct (compare_nat n0 0) eqn:D.
-        -- lia.
-        -- rewrite e in P. destruct n.
-          ++ simpl. reflexivity.
-          ++ inversion P.
-        -- admit.
-      * simpl. unfold up_ML, convertf in P. destruct n.
-        -- inversion P.
-        -- simpl. inversion P. reflexivity.
-    + simpl. epose (fold_left_map _ _ _ _ (map (convert_term (up_ML convertf)) v) patt_app bevar_subst ((patt_sym (sym_fun f))) (convert_term convertf t0) 0). rewrite e. simpl. clear e.
-      repeat rewrite Vector.map_map.*)
 
 Lemma Finally_formulas: forall f t0 n,
 bevar_subst (convert_form (upn_ML (S n) convertf) (f)) (convert_term convertf (t0)) n =
@@ -515,10 +431,6 @@ Proof.
 
 Qed.
 
-(* bevar_subst (convert_form (upn_ML 2 convertf) (f)) (convert_term convertf (t0)) n =
-   convert_form (upn_ML n convertf) (f)[up (t0..)] *)
-
-
 Lemma up_up_eliminate_form : forall φ f,
   convert_form (up_ML f) φ[↑] = convert_form (f) φ.
 Proof.
@@ -561,7 +473,7 @@ Proof.
 Admitted.
 
 Lemma alma2: forall x0 x,
-(var (S x)) <> x0 -> (* Itt volt a baj a multkor, mert ha nem történik meg bal oldalon a behely. akkor lecsökkenti a .. így is úgy is x0-t, így ha x = pred x0, akkor azt IS kicseréli az evar quant... Emiatt kell az, hogy x egy olyan szám legyen, aminek a rákövetkezője ne legyen benne x0-ban (ha egy fv. akár) *)
+(var (S x)) <> x0 -> 
 evar_quantify x 0 (convert_term convertf x0`[($x)..]) = convert_term (up_ML convertf) x0.
 Proof.
   induction x0; intros.
@@ -582,23 +494,10 @@ Proof.
       2: reflexivity. 
 Admitted.
   
-(* evar_quantify (convert_term (up_ML convertf) t) 0 (convert_form convertf Φ[t..]) = convert_form (up_ML convertf) Φ *)
-  
-(*   Kelle gy olyan fv, hogy fun n => match n with | 0 => x (friss szabad vátltozó ...)
-                                                   | S n => (up_ML fn) n
-                                                   end. *)
-                                                
-                                                
-  (* evar_quantify x 0 (convert_form convertf Φ) = convert_form (up_ML convertf) Φ *)
-
-
-
-
+(* evar_quantify (convert_term (up_ML convertf) t) 0 (convert_form convertf Φ[t..]) =? convert_form (up_ML convertf) Φ *)
 
 End FOL_ML.
 Check Syntax.evar.
-
-
 
 (* Testing with PA library *)
 
