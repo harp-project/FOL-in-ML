@@ -1,8 +1,8 @@
-# First-order logic embedding in Matching logic
+# First-order logic embedding in matching logic
 
-This project aims to embed First-order logic into Matching logic. The formalisation is implemented in Coq. 
+This project aims to embed first-order logic into matching logic. The formalisation is implemented in Coq. 
 
-In order to use this library, you need to install the Matching logic repository. Detailed tutorial can be found [here](https://github.com/harp-project/AML-Formalization/blob/master/README.md#aml-formalization)
+In order to use this library, you need to install the Matching logic repository. Detailed tutorial can be found [here](https://github.com/harp-project/AML-Formalization/blob/master/README.md#aml-formalization). The original formalisation of first-order logic can be found [here](https://github.com/mark-koch/firstorder-proof-mode).
 
 ## Content
 
