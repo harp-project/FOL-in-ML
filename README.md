@@ -8,7 +8,7 @@ This project aims to embed first-order logic into matching logic. The formalisat
 
 ## Build
 
-Run the make file or compile the files in the following order:
+Run the Makefile or compile the files in the following order:
 1. `FOL.v`
 2. `Tarski.v`
 3. `VectorTech.v`
