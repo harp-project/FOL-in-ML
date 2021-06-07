@@ -16,10 +16,5 @@ Inductive Hilbert_proof_sys (Γ : (list form)): form -> Prop :=
 | Q6F (Φ ψ : form)(x : nat) : Γ ⊢_FOL ((Φ[($x)..] --> ψ)) ->  Γ ⊢_FOL ((∃ Φ) --> ψ)
 where "Γ ⊢_FOL form" := (Hilbert_proof_sys Γ form).
 
-(* TODO: test this *)
-
 End Hilbert.
-(* fun x => match compare_nat x 0 with
-           | Nat_less _ _ _ => var 0
-           | Nat_equal _ _ _ => t
-           | Nat_greater _ _ _ => var (pred x) end *)
+
