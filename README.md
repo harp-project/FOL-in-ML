@@ -3,11 +3,19 @@
 This project aims to embed first-order logic into matching logic. The formalisation is implemented in Coq. The project is based on a [formalisation of first-order logic](https://github.com/mark-koch/firstorder-proof-mode).
 
 ## Requirements
-In order to use this library, you need to install the Matching logic repository. Detailed tutorial can be found [here](https://github.com/harp-project/AML-Formalization/blob/master/README.md#aml-formalization).
+* [Matching logic repository installed](https://github.com/harp-project/AML-Formalization/blob/master/README.md#aml-formalization)
+* The Coq Proof Assistant, version 8.12.1
 
 ## Build
 
-Run the make file.
+Run the make file or compile the files in the following order:
+1. `FOL.v`
+2. `Tarski.v`
+3. `VectorTech.v`
+4. `Deduction.v`
+5. `PA.v`
+6. `Hilbert.v`
+7. `FOL_in_ML.v`
 
 ## Content
 
