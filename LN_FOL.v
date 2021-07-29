@@ -1,6 +1,5 @@
 From MatchingLogic Require Export Logic Theories.Definedness DerivedOperators Theories.Sorts.
-Require Export extralibrary.
-Require Export Lia.
+Require Export extralibrary Coq.Program.Wf Lia FunctionalExtensionality.
 From stdpp Require Import countable.
 Require Export Vector PeanoNat String.
 Print Pattern.
@@ -161,7 +160,7 @@ Section semantics.
   Class interp := B_I
     {
       i_f : forall f : funs, vec domain (ar_funs f) -> domain ;
-      i_P : forall P : preds, vec domain (ar_preds P) -> Prop ;
+      i_P : forall P : preds, vec domain (ar_preds P) -> bool ; (* for decidability *)
     }.
     Context {I : interp }.
     Definition env := vars -> domain. (* for free vars *)
@@ -229,7 +228,7 @@ Print Vector.map.
 
     Program Fixpoint sat (rho : env) (phi : form) {measure (form_size phi)} : Prop :=
     match phi with
-    | atom P v => i_P P (Vector.map (eval rho) v)
+    | atom P v => i_P P (Vector.map (eval rho) v) = true
     | fal => False
     | impl phi psi => sat rho phi -> sat rho psi
     | exs phi => let x := var_fresh (form_vars phi) in
@@ -240,8 +239,64 @@ Print Vector.map.
     Next Obligation. intros. subst. simpl. rewrite <- subst_var_size. lia. Defined.
     Next Obligation. Tactics.program_simpl. Defined.
 
+    Ltac break_match_hyp :=
+    match goal with
+    | [ H : context [ match ?X with _=>_ end ] |- _] =>
+         match type of X with
+         | sumbool _ _=>destruct X
+         | _=>destruct X eqn:? 
+         end 
+    end.
 
-    Notation "rho ⊨_FOL phi" := (sat rho phi) (at level 20).
+    Ltac break_match_goal :=
+    match goal with
+    | [ |- context [ match ?X with _=>_ end ] ] => 
+        match type of X with
+        | sumbool _ _ => destruct X
+        | _ => destruct X eqn:?
+        end
+    end.
+
+    Proposition sat_atom : forall ρ P v, sat ρ (atom P v) = 
+                                            (i_P P (Vector.map (eval ρ) v) = true).
+    Proof. reflexivity. Qed.
+    Proposition sat_fal : forall ρ, sat ρ fal = False.
+    Proof. reflexivity. Qed.
+    Proposition sat_impl : forall ρ φ₁ φ₂, sat ρ (impl φ₁ φ₂) = 
+                                            (sat ρ φ₁ -> sat ρ φ₂).
+    Proof.
+      intros. unfold sat, sat_func.
+      rewrite fix_sub_eq.
+      Tactics.program_simpl. unfold projT1, projT2. intros.
+      destruct x, f0; auto.
+      rewrite H, H; auto.
+      f_equal. extensionality d. rewrite H. auto.
+    Qed.
+    Proposition sat_exs : forall ρ φ, sat ρ (exs φ) = 
+                        (let x := var_fresh (form_vars φ) in
+      exists d : domain, sat (update_env ρ x d) (bsubst_form φ (fvar x) 0)).
+    Proof.
+      intros. unfold sat, sat_func.
+      rewrite fix_sub_eq.
+      Tactics.program_simpl. unfold projT1, projT2. intros.
+      destruct x, f0; auto.
+      rewrite H, H; auto.
+      f_equal. extensionality d. rewrite H. auto.
+    Qed.
+
+    Notation "rho ⊨ phi" := (sat rho phi) (at level 20).
+
+  Theorem sat_dec : forall φ ρ, {ρ ⊨ φ} + {~ ρ ⊨ φ}.
+  Proof.
+    induction φ; intros.
+    * right. auto.
+    * rewrite sat_atom. apply bool_dec.
+    * destruct (IHφ1 ρ), (IHφ2 ρ).
+      1, 3-4: left; rewrite sat_impl; intros; auto.
+      congruence.
+      right. rewrite sat_impl. intros. auto.
+    * admit. (* TODO: technical, using size based induction *)
+  Admitted.
 
 End semantics.
 
@@ -302,7 +357,29 @@ Section soundness_completeness.
       -> sat D fail rho phi.
 
   Theorem soundness :
-    forall φ Γ, Γ ⊢_FOL φ -> valid Γ φ. Admitted.
+    forall φ Γ, Γ ⊢_FOL φ -> valid Γ φ.
+  Proof.
+    intros. induction H; subst; unfold valid; intros.
+    * now apply H1.
+    * do 2 rewrite sat_impl. intros. auto.
+    * repeat rewrite sat_impl. intros. apply H3; auto.
+    * repeat rewrite sat_impl. intros.
+      destruct (sat_dec D fail φ rho); auto.
+      assert (~ sat D fail rho fal) by auto.
+      assert (sat D fail rho fal).
+      { apply H1. intros. congruence. }
+      congruence.
+    * unfold valid in *.
+      apply IHHilbert_proof_sys1 in H3 as IH1.
+      apply IHHilbert_proof_sys2 in H3 as IH2. rewrite sat_impl in IH2. now apply IH2.
+    * rewrite sat_impl, sat_exs. intros. admit. (* TODO... *)
+    * rewrite sat_impl, sat_exs. intros. unfold valid in *.
+      apply IHHilbert_proof_sys in H3. rewrite sat_impl in H3. apply H3.
+      destruct H4. simpl in H4.
+      remember (var_fresh (form_vars (quantify_form φ x 0))) as FF.
+      admit. (* TODO... *)
+  Admitted.
+
   Theorem completeness :
     forall φ Γ, valid Γ φ -> Γ ⊢_FOL φ. Admitted.
 End soundness_completeness.
