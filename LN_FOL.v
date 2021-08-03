@@ -1,8 +1,34 @@
-From MatchingLogic Require Export Logic Theories.Definedness DerivedOperators Theories.Sorts.
-Require Export extralibrary Coq.Program.Wf Lia FunctionalExtensionality.
+From MatchingLogic Require Export Logic 
+                                  Theories.Definedness
+                                  DerivedOperators
+                                  Theories.Sorts
+                                  Helpers.FOL_helpers.
+Import MatchingLogic.Syntax.Notations MatchingLogic.DerivedOperators.Notations.
+Require Export extralibrary 
+               Coq.Program.Wf 
+               Lia 
+               FunctionalExtensionality.
 From stdpp Require Import countable.
 Require Export Vector PeanoNat String.
 Print Pattern.
+
+Ltac break_match_hyp :=
+match goal with
+| [ H : context [ match ?X with _=>_ end ] |- _] =>
+     match type of X with
+     | sumbool _ _=>destruct X
+     | _=>destruct X eqn:? 
+     end 
+end.
+
+Ltac break_match_goal :=
+match goal with
+| [ |- context [ match ?X with _=>_ end ] ] => 
+    match type of X with
+    | sumbool _ _ => destruct X
+    | _ => destruct X eqn:?
+    end
+end.
 
 Definition vec := t.
 
@@ -79,7 +105,7 @@ Section fix_signature.
     | fal => fal
     | atom P v => atom P (map (fun x => bsubst_term x t n) v)
     | impl phi1 phi2 => impl (bsubst_form phi1 t n) (bsubst_form phi2 t n)
-    | exs phi => exs (bsubst_form phi t n)
+    | exs phi => exs (bsubst_form phi t (S n))
     end.
 
   Inductive Forall {A : Type} (P : A -> Type) : forall {n}, t A n -> Type :=
@@ -148,6 +174,40 @@ Section fix_signature.
   ->
     wf_form (exs f) n.
 
+  Theorem wf_increase_term :
+    forall t n, wf_term t n -> forall n', n' >= n -> wf_term t n'.
+  Proof.
+  Admitted.
+
+  Theorem wf_increase :
+    forall φ n, wf_form φ n -> forall n', n' >= n -> wf_form φ n'.
+  Proof.
+  Admitted.
+
+  Theorem wf_term_subst :
+    forall b t n, wf_term b (S n) -> wf_term t n ->
+      wf_term (bsubst_term b t n) n.
+  Proof.
+    induction b; intros; inversion H; subst.
+    * constructor.
+    * simpl. break_match_goal.
+      - now constructor.
+      - auto.
+      - lia.
+    * simpl. admit. (* TODO: technical *)
+  Admitted.
+
+  Theorem wf_form_subst :
+    forall φ t n, wf_form φ (S n) -> wf_term t n ->
+      wf_form (bsubst_form φ t n) n.
+  Proof.
+    induction φ; intros; simpl.
+    * constructor.
+    * constructor. admit. (* TODO: technical, with wf_term_subst *)
+    * inversion H. subst. constructor. apply IHφ1; auto. apply IHφ2; auto.
+    * inversion H. subst. constructor. apply IHφ; auto. eapply wf_increase_term. exact H0.
+      lia.
+  Admitted.
 
 End fix_signature.
 
@@ -223,7 +283,7 @@ Print Vector.map.
     Proof.
       induction f; intros; auto; simpl.
       - now rewrite (IHf1 x y), (IHf2 x y).
-      - now rewrite (IHf x y).
+      - now rewrite (IHf x (S y)).
     Qed.
 
     Program Fixpoint sat (rho : env) (phi : form) {measure (form_size phi)} : Prop :=
@@ -238,24 +298,6 @@ Print Vector.map.
     Next Obligation. intros. subst. simpl; lia. Defined.
     Next Obligation. intros. subst. simpl. rewrite <- subst_var_size. lia. Defined.
     Next Obligation. Tactics.program_simpl. Defined.
-
-    Ltac break_match_hyp :=
-    match goal with
-    | [ H : context [ match ?X with _=>_ end ] |- _] =>
-         match type of X with
-         | sumbool _ _=>destruct X
-         | _=>destruct X eqn:? 
-         end 
-    end.
-
-    Ltac break_match_goal :=
-    match goal with
-    | [ |- context [ match ?X with _=>_ end ] ] => 
-        match type of X with
-        | sumbool _ _ => destruct X
-        | _ => destruct X eqn:?
-        end
-    end.
 
     Proposition sat_atom : forall ρ P v, sat ρ (atom P v) = 
                                             (i_P P (Vector.map (eval ρ) v) = true).
@@ -334,7 +376,7 @@ Section proof_system.
   | MPF (φ1 φ2 : form)        : wf_form φ1 0 -> wf_form (impl φ1 φ2) 0 ->
     Γ ⊢_FOL φ1 -> Γ ⊢_FOL impl φ1 φ2 -> Γ ⊢_FOL φ2
   | Q5F (φ : form) (t : term) :
-    wf_form (exs φ) 0 ->
+    wf_form (exs φ) 0 -> wf_term t 0 ->
     Γ ⊢_FOL impl (bsubst_form φ t 0) (exs φ)
   | Q6F (φ ψ : form)(x : vars) : 
     wf_form φ 0 -> wf_form ψ 0 -> Γ ⊢_FOL impl φ ψ ->
@@ -527,6 +569,15 @@ Section FOL_ML_correspondence.
     * simpl. rewrite IHφ1, IHφ2; auto.
   Admitted.
 
+  Corollary wf_FOL_ML_term : forall t,
+    wf_term t 0 -> is_true (well_formed (convert_term t)).
+  Proof.
+    intros. unfold well_formed. unfold is_true.
+    apply andb_true_intro. split.
+    * apply positive_term_FOL_ML.
+    * now apply wf_term_FOL_ML.
+  Qed.
+
   Corollary wf_FOL_ML : forall φ,
     wf_form φ 0 -> is_true (well_formed (convert_form φ)).
   Proof.
@@ -595,6 +646,116 @@ Section FOL_ML_correspondence.
       apply sets.not_elem_of_union. auto.
   Admitted.
 
+  Theorem bevar_subst_corr_term :
+    forall b t n, convert_term (bsubst_term b t n) = 
+                  bevar_subst (convert_term b) (convert_term t) n.
+  Proof.
+    induction b; intros; auto.
+    * simpl. now break_match_goal.
+    * simpl. admit. (* TODO: technical *)
+  Admitted.
+
+  Theorem bevar_subst_corr_form :
+    forall φ t n, convert_form (bsubst_form φ t n) = 
+                  bevar_subst (convert_form φ) (convert_term t) n.
+  Proof.
+    induction φ; intros; auto.
+    * admit. (* TODO: technical, with bevar_subst_corr_term *)
+    * simpl. now rewrite IHφ1, IHφ2.
+    * simpl. now rewrite IHφ.
+  Admitted.
+
+  (*******************************************************)
+  (* This has to go to FOL helpers *)
+  Lemma conj_intro_meta_partial :
+  ∀ (Γ : Theory) (A B : Pattern),
+    is_true (well_formed A) → is_true (well_formed B) → Γ ⊢_ML A → Γ ⊢_ML patt_imp B (patt_and A B).
+  Proof.
+    intros.
+    eapply (Modus_ponens _ _ _ _ _).
+    - exact H1.
+    - apply conj_intro; auto.
+    Unshelve. all: auto.
+  Qed.
+
+  Lemma and_impl_patt :
+    forall (A B C : Pattern) Γ, is_true (well_formed A) → is_true (well_formed B) → is_true (well_formed C) →
+    Γ ⊢_ML A -> Γ ⊢_ML ((A and B) ---> C) -> Γ ⊢_ML (B ---> C).
+  Proof.
+    intros.
+    Search patt_imp. Check syllogism_intro.
+    eapply syllogism_intro with (B0 := patt_and A B); auto.
+    apply conj_intro_meta_partial; auto.
+  Qed.
+
+  Lemma conj_intro2 (Γ : Theory) (A B : Pattern) :
+    is_true (well_formed A) -> is_true (well_formed B) -> Γ ⊢_ML (A ---> (B ---> (B and A))).
+  Proof.
+    intros. eapply reorder_meta; auto.
+    apply conj_intro; auto.
+  Qed.
+
+  Lemma conj_intro_meta_partial2 :
+  ∀ (Γ : Theory) (A B : Pattern),
+    is_true (well_formed A) → is_true (well_formed B) → Γ ⊢_ML A → Γ ⊢_ML patt_imp B (patt_and B A).
+  Proof.
+    intros.
+    eapply (Modus_ponens _ _ _ _ _).
+    - exact H1.
+    - Search patt_and. apply conj_intro2; auto.
+    Unshelve. all: auto.
+  Qed.
+
+  Lemma and_impl_patt2 :
+    forall (A B C : Pattern) Γ, is_true (well_formed A) → is_true (well_formed B) → is_true (well_formed C) →
+    Γ ⊢_ML A -> Γ ⊢_ML (patt_imp (patt_and B A) C) -> Γ ⊢_ML (patt_imp B C).
+  Proof.
+    intros.
+    Search patt_imp. Check syllogism_intro.
+    eapply syllogism_intro with (B0 := patt_and B A); auto.
+    pose conj_intro_meta_partial2; auto.
+  Qed.
+
+  Lemma patt_and_comm :
+    forall (A B : Pattern) Γ, is_true (well_formed A) → is_true (well_formed B)
+  ->
+    Γ ⊢_ML patt_and A B -> Γ ⊢_ML patt_and B A.
+  Proof.
+    intros.
+    apply pf_conj_elim_r_meta in H1 as P1.
+    apply pf_conj_elim_l_meta in H1 as P2. all: auto.
+    apply conj_intro_meta; auto.
+  Qed.
+
+  Lemma patt_equal_refl :
+    forall φ Γ, 
+    Γ ⊢_ML patt_equal φ φ.
+  Admitted.
+
+  (*******************************************************)
+
+  (* Most important lemmas: *)
+  Proposition term_functionality :
+    forall t Γ, wf_term t 0 ->
+      Γ ⊢_ML patt_exists (patt_equal (convert_term t) (patt_bound_evar 0)).
+  Proof.
+    induction t using term_ind; intros.
+    * simpl.
+      pose proof (Ex_quan Γ (patt_equal (patt_free_evar x) (patt_bound_evar 0)) x).
+      simpl in H0. eapply Modus_ponens. 4: exact H0.
+      all: auto.
+      apply patt_equal_refl.
+    * inversion H. inversion H1.
+    * admit.
+  Admitted.
+  
+  Lemma exists_functional_subst :
+    forall φ φ' Γ, 
+      Γ ⊢_ML patt_imp (patt_and (instantiate (patt_exists φ) φ') (patt_exists (patt_equal φ' (patt_bound_evar 0)))) (patt_exists φ).
+  Proof.
+  
+  Admitted.
+
   Theorem arrow_1 : forall (φ : form) (Γ : list form), 
     Γ ⊢_FOL φ
    -> 
@@ -607,10 +768,23 @@ Section FOL_ML_correspondence.
     * apply P3; auto.
     * eapply Modus_ponens. 3: exact IHIH1. 3: exact IHIH2. all: auto.
       inversion H0. subst. auto.
-    * simpl. admit. (* this requires much work, w/ axioms, additional theorems *)
+    * simpl.
+      epose proof (term_functionality t (from_FOL_theory Γ) H0).
+      pose proof (exists_functional_subst (convert_form φ) (convert_term t) (from_FOL_theory Γ)).
+      simpl in H1. rewrite bevar_subst_corr_form.
+      eapply and_impl_patt2. 4: exact H1. 4: exact H2.
+      all: apply wf_FOL_ML in H as H';auto.
+      - simpl in H. clear H2 H1. unfold well_formed in *.
+        apply andb_true_iff. apply andb_true_iff in H'. destruct H'.
+        split.
+        + simpl in *. now rewrite positive_term_FOL_ML.
+        + unfold well_formed_closed. simpl.
+          rewrite wf_term_FOL_ML; auto. eapply wf_increase_term. exact H0. lia.
+      - rewrite <- bevar_subst_corr_form. apply wf_FOL_ML. inversion H. subst.
+        apply wf_form_subst; auto.
     * simpl. rewrite quantify_form_correspondence. eapply Ex_gen; auto.
       apply form_vars_free_vars_notin. auto.
-  Admitted.
+  Qed.
 
 
 End FOL_ML_correspondence.
