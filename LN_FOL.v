@@ -7,7 +7,8 @@ Import MatchingLogic.Syntax.Notations MatchingLogic.DerivedOperators.Notations.
 Require Export extralibrary 
                Coq.Program.Wf 
                Lia 
-               FunctionalExtensionality.
+               FunctionalExtensionality
+               Program.Equality.
 From stdpp Require Import countable.
 Require Export Vector PeanoNat String.
 Print Pattern.
@@ -31,6 +32,69 @@ match goal with
 end.
 
 Definition vec := t.
+
+Lemma Forall_map T n (l : vec T n) : forall (P : T -> Prop) (f : T -> T),
+  (forall x, P x -> P (f x))
+->
+  Forall P l -> Forall P (map f l).
+Proof.
+  induction l; intros; constructor;
+  inversion H0; subst. auto.
+  apply IHl; auto. simpl_existT. subst. auto.
+Qed.
+
+Theorem fold_left_map : forall T Q n (v : vec T n) (App : Q -> T -> Q) (start : Q) f,
+  fold_left App start (map f v) = fold_left (fun Acc x => App Acc (f x)) start v.
+Proof.
+  induction v; intros; simpl; auto.
+Qed.
+
+(* Theorem fold_left_pointwise : forall T Q R n (v : vec T n) (App : Q -> T -> Q) 
+                                     (start : Q) (f : Q -> Q),
+  f (fold_left App start v) = fold_left (fun Acc x => App Acc (f x)) (f start) v. *)
+
+Lemma map_Forall T n (l : vec T n) : forall (P : T -> Prop) (f : T -> T),
+  (forall x, P (f x) -> P x)
+->
+  Forall P (map f l) -> Forall P l.
+Proof.
+  induction l; intros; constructor;
+  inversion H0; subst. auto.
+  eapply IHl; eauto. simpl_existT. now subst.
+Qed.
+
+Lemma Forall_map_ext T n (l : vec T n) : forall (P : T -> Prop) (f : T -> T),
+  (forall x, In x l -> P x -> P (f x))
+->
+  Forall P l -> Forall P (map f l).
+Proof.
+  induction l; intros; constructor;
+  inversion H0; subst. auto. apply H. constructor. auto.
+  apply IHl; auto. intros. apply H. constructor 2. auto. auto. simpl_existT. now subst.
+Qed.
+
+Lemma map_Forall_ext T n (l : vec T n) : forall (P : T -> Prop) (f : T -> T),
+  (forall x, In x l -> P (f x) -> P x)
+->
+  Forall P (map f l) -> Forall P l.
+Proof.
+  induction l; intros; constructor;
+  inversion H0; subst. auto. apply H. constructor; auto. auto.
+  eapply IHl; auto. intros. apply H. constructor 2. auto. exact H2. simpl_existT.
+  now subst.
+Qed.
+
+Lemma Forall_impl_ext 
+     : ∀ (A : Type) (P Q : A → Prop) n,
+         ∀ l : vec A n, (∀ a : A, In a l -> P a → Q a) → Forall P l → Forall Q l.
+Proof.
+  induction l; intros; constructor; inversion H0; subst.
+  apply H. constructor; auto. auto.
+  apply IHl; auto. intros. apply H; auto. constructor 2. auto.
+  simpl_existT. now subst.
+Qed.
+
+Global Hint Constructors Forall : core.
 
 Class funcs_signature :=
   { funs : Type; funs_eqdec : EqDecision funs; ar_funs : funs -> nat }.
@@ -108,9 +172,9 @@ Section fix_signature.
     | exs phi => exs (bsubst_form phi t (S n))
     end.
 
-  Inductive Forall {A : Type} (P : A -> Type) : forall {n}, t A n -> Type :=
-  | Forall_nil : Forall P (@Vector.nil A)
-  | Forall_cons : forall n (x : A) (l : t A n), P x -> Forall P l -> Forall P (@Vector.cons A x n l).
+  Inductive ForallT {A : Type} (P : A -> Type) : forall {n}, t A n -> Type :=
+  | Forall_nil : ForallT P (@Vector.nil A)
+  | Forall_cons : forall n (x : A) (l : t A n), P x -> ForallT P l -> ForallT P (@Vector.cons A x n l).
 
   Inductive vec_in {A : Type} (a : A) : forall {n}, vec A n -> Type :=
   | vec_inB {n} (v : vec A n) : vec_in a (@cons A a n v)
@@ -120,7 +184,7 @@ Section fix_signature.
   Lemma term_rect' (p : term -> Type) :
     (forall x, p (fvar x)) ->
     (forall x, p (bvar x)) -> 
-    (forall F v, (Forall p v) -> p (func F v)) -> forall (t : term), p t.
+    (forall F v, (ForallT p v) -> p (func F v)) -> forall (t : term), p t.
   Proof.
     intros f1 f2 f3. fix strong_term_ind' 1. destruct t as [n|n|F v].
     - apply f2.
@@ -154,7 +218,7 @@ Section fix_signature.
   | wf_fvar x n : wf_term (fvar x) n
   | wf_bvar x n : x < n -> wf_term (bvar x) n
   | wf_funcs f v n :
-    Forall (fun t => wf_term t n) v
+    Vector.Forall (fun t => wf_term t n) v
   ->
     wf_term (func f v) n
   .
@@ -162,7 +226,7 @@ Section fix_signature.
   Inductive wf_form : form -> nat -> Prop :=
   | wf_fal n : wf_form fal n
   | wf_pred P x n : 
-    Forall (fun t => wf_term t n) x
+    Vector.Forall (fun t => wf_term t n) x
   ->
     wf_form (atom P x) n
   | wf_impl f1 f2 n:
@@ -177,12 +241,25 @@ Section fix_signature.
   Theorem wf_increase_term :
     forall t n, wf_term t n -> forall n', n' >= n -> wf_term t n'.
   Proof.
-  Admitted.
+    induction t; intros.
+    * constructor.
+    * constructor. inversion H. subst. lia.
+    * inversion H. subst. constructor; auto. simpl_existT. subst.
+      eapply Forall_impl_ext. 2: exact H4.
+      intros. simpl in H1. eapply IH. 2: simpl in H2; exact H2. auto. lia.
+  Qed.
 
   Theorem wf_increase :
     forall φ n, wf_form φ n -> forall n', n' >= n -> wf_form φ n'.
   Proof.
-  Admitted.
+    induction φ; intros.
+    * constructor.
+    * inversion H; subst. constructor; auto. simpl_existT. subst.
+      eapply Forall_impl. 2: exact H4.
+      intros. simpl in H1. eapply wf_increase_term. exact H1. auto.
+    * inversion H. subst. constructor. eapply IHφ1; eauto. eapply IHφ2; eauto.
+    * inversion H. subst. constructor. eapply IHφ; eauto. lia.
+  Qed.
 
   Theorem wf_term_subst :
     forall b t n, wf_term b (S n) -> wf_term t n ->
@@ -194,8 +271,14 @@ Section fix_signature.
       - now constructor.
       - auto.
       - lia.
-    * simpl. admit. (* TODO: technical *)
-  Admitted.
+    * simpl. constructor. simpl_existT. subst.
+      eapply Forall_impl_ext in H4.
+      2: { intros. eapply IH. exact H1. exact H2. exact H0. }
+      clear H IH H0. induction v; simpl; constructor.
+      inversion H4; auto.
+      inversion H4; auto. simpl_existT. subst.
+      now apply IHv.
+  Qed.
 
   Theorem wf_form_subst :
     forall φ t n, wf_form φ (S n) -> wf_term t n ->
@@ -203,11 +286,17 @@ Section fix_signature.
   Proof.
     induction φ; intros; simpl.
     * constructor.
-    * constructor. admit. (* TODO: technical, with wf_term_subst *)
+    * inversion H. subst. constructor.
+      eapply Forall_impl_ext in H4.
+      2: { intros. eapply wf_term_subst. exact H2. exact H0. }
+      simpl_existT. subst.
+      clear H H0. induction v; simpl; constructor.
+      inversion H4; auto.
+      inversion H4; auto. simpl_existT. subst. now apply IHv.
     * inversion H. subst. constructor. apply IHφ1; auto. apply IHφ2; auto.
     * inversion H. subst. constructor. apply IHφ; auto. eapply wf_increase_term. exact H0.
       lia.
-  Admitted.
+  Qed.
 
 End fix_signature.
 
@@ -225,8 +314,6 @@ Section semantics.
     Context {I : interp }.
     Definition env := vars -> domain. (* for free vars *)
     Variable failure : domain. (* for wrong evaluation!!! *)
-
-Print Vector.map.
 
     Fixpoint mmap {A B : Type} (f : A -> option B) {n : nat} (v : t A n) : option (t B n) :=
     match v in (t _ n0) return (option (t B n0)) with
@@ -475,13 +562,15 @@ Section FOL_ML_correspondence.
   match t with
    | bvar x => patt_bound_evar x
    | fvar x => patt_free_evar x
-   | func f x => List.fold_left (fun Acc x => patt_app Acc x) (reverse (Vector.fold_left (fun Acc x => convert_term x :: Acc) [] x)) (patt_sym (sym_fun f))
+   | func f x => fold_left (fun Acc t => patt_app Acc (convert_term t)) 
+                  (patt_sym (sym_fun f)) x
   end.
 
   Fixpoint convert_form (f : form) : Pattern :=
   match f with
    | fal => patt_bott
-   | atom P x => List.fold_left (fun Acc x => patt_app Acc x) (reverse (Vector.fold_left (fun Acc x => convert_term x :: Acc) [] x)) (patt_sym (sym_pred P))
+   | atom P x => fold_left (fun Acc t => patt_app Acc (convert_term t))
+                  (patt_sym (sym_pred P)) x
    | impl x x0 => patt_imp (convert_form x) (convert_form x0)
    | exs x => patt_exists (convert_form x)
   end.
@@ -494,33 +583,33 @@ Section FOL_ML_correspondence.
   Fixpoint add_forall_prefix (n : nat) (base : Pattern) {struct n} : Pattern :=
   match n with
   | 0 => base
-  | S n' => add_forall_prefix n' (patt_forall base)
+  | S n' => patt_forall (add_forall_prefix n' base)
   end.
 
   Fixpoint make_list1 (n : nat) : list nat :=
   match n with
   | 0 => []
-  | S n' => make_list1 n' ++ [n]
+  | S n' => n :: make_list1 n'
   end.
 
   Fixpoint make_list0 (n : nat) : list nat :=
   match n with
   | 0 => []
-  | S n' => make_list0 n' ++ [n']
+  | S n' => n' :: make_list0 n'
   end.
 
   Definition axiom (name : AxName) : Pattern :=
   match name with 
   | AxDefinedness name' => Definedness.axiom name'
   | AxFun f             => add_forall_prefix (ar_funs f) (patt_exists (patt_equal 
-                          (List.fold_right
-                            (fun (x : nat) Acc => patt_app Acc (patt_bound_evar x)) 
-                            (patt_sym (sym_fun f)) (make_list1 (ar_funs f)))
+                          (List.fold_left
+                            (fun Acc (x : nat) => patt_app Acc (patt_bound_evar x)) 
+                            (make_list1 (ar_funs f)) (patt_sym (sym_fun f)))
                           (patt_bound_evar 0)))
 
-  | AxPred p            => let φ := (List.fold_right
-                            (fun (x : nat) Acc => patt_app Acc (patt_bound_evar x)) 
-                            (patt_sym (sym_pred p)) (make_list0 (ar_preds p))) in
+  | AxPred p            => let φ := (List.fold_left
+                            (fun Acc (x : nat) => patt_app Acc (patt_bound_evar x)) 
+                            (make_list0 (ar_preds p)) (patt_sym (sym_pred p))) in
                           add_forall_prefix (ar_preds p) 
                             (patt_or (patt_equal φ patt_top) (patt_equal φ patt_bott))
   end.
@@ -540,34 +629,56 @@ Section FOL_ML_correspondence.
     induction t using term_ind; intros.
     * constructor.
     * simpl. inversion H. now apply Nat.ltb_lt.
-    * simpl. admit. (* TODO: Technical *)
-  Admitted.
+    * simpl. inversion H. simpl_existT. subst. clear H. 
+      remember (@patt_sym sig (sym_fun F)) as start.
+      assert (is_true (well_formed_closed_aux start n 0)). { rewrite Heqstart. auto. }
+      clear Heqstart. generalize dependent start. induction v.
+      - simpl. auto.
+      - simpl. inversion H3. simpl_existT. subst. intros.
+        epose proof (IHv _ H4 (start $ convert_term h)%ml). apply H0.
+        simpl. rewrite H, IH; auto. constructor.
+    Unshelve. intros. apply IH. now constructor 2. auto.
+  Qed.
 
   Theorem wf_aux_FOL_ML : forall φ n,
     wf_form φ n -> is_true (well_formed_closed_aux (convert_form φ) n 0).
   Proof.
     induction φ; intros; auto.
-    * inversion H. subst.
-      simpl. admit. (* TODO: Technical, use theorem wf_term_FOL_ML *)
+    * simpl. inversion H. simpl_existT. subst. clear H.
+      remember (@patt_sym sig (sym_pred P)) as start.
+      assert (is_true (well_formed_closed_aux start n 0)). { rewrite Heqstart. auto. }
+      clear Heqstart. generalize dependent start. induction v.
+      - simpl. auto.
+      - simpl. inversion H3. simpl_existT. subst. intros.
+        epose proof (IHv H4 (start $ convert_term h)%ml). apply H0.
+        simpl. rewrite H, wf_term_FOL_ML; auto.
     * simpl. inversion H. subst. rewrite IHφ1, IHφ2; auto.
     * simpl. inversion H. subst. rewrite IHφ; auto.
-  Admitted.
+  Qed.
 
   Theorem positive_term_FOL_ML : forall t,
     is_true (well_formed_positive (convert_term t)).
   Proof.
-    induction t using term_ind; intros; auto.
-    * simpl. induction v; intros; auto.
-      simpl. (* TODO: Technical*)
-  Admitted.
+    induction t; intros; auto.
+    * simpl. remember (@patt_sym sig (sym_fun F)) as start.
+      assert (is_true (well_formed_positive start)) by now rewrite Heqstart.
+      clear Heqstart. generalize dependent start. induction v; intros; auto.
+      simpl. apply IHv.
+      - intros. apply IH; auto. now constructor 2.
+      - simpl. rewrite H, IH; auto. constructor.
+  Qed.
 
   Theorem positive_form_FOL_ML : forall φ,
     is_true (well_formed_positive (convert_form φ)).
   Proof.
     induction φ; intros; auto.
-    * admit. (* TODO: Technical, use positive_term_FOL_ML *)
+    * simpl. remember (@patt_sym sig (sym_pred P)) as start.
+      assert (is_true (well_formed_positive start)) by now rewrite Heqstart.
+      clear Heqstart. generalize dependent start. induction v; intros; auto.
+      simpl. apply IHv.
+      simpl. rewrite H, positive_term_FOL_ML; auto.
     * simpl. rewrite IHφ1, IHφ2; auto.
-  Admitted.
+  Qed.
 
   Corollary wf_FOL_ML_term : forall t,
     wf_term t 0 -> is_true (well_formed (convert_term t)).
@@ -606,9 +717,15 @@ Section FOL_ML_correspondence.
     forall t n x, convert_term (quantify_term t x n) = 
                   evar_quantify x n (convert_term t).
   Proof.
-    induction t using term_ind; intros; auto; cbn.
+    induction t; intros; auto; cbn.
     * now destruct (var_eqdec x0 x).
-    * admit. (* TODO: Technical *)
+    * remember (@patt_sym sig (sym_fun F)) as start.
+      rewrite fold_left_map.
+      assert (start = evar_quantify x n start) by now rewrite Heqstart.
+      clear Heqstart.
+      generalize dependent start.
+      induction v; intros; simpl; auto.
+      rewrite IHv, IH.
   Admitted.
 
   Theorem quantify_form_correspondence :
@@ -632,19 +749,43 @@ Section FOL_ML_correspondence.
     induction t using term_ind; intros.
     * simpl. intro. apply H. simpl. apply sets.elem_of_singleton_1 in H0. auto.
     * intro. simpl in H0. inversion H0.
-    * admit. (* TODO: Technical *)
-  Admitted.
+    * simpl in H. simpl. 
+      remember (@patt_sym sig (sym_fun F)) as start.
+      assert (x ∉ free_evars start) by now rewrite Heqstart.
+      clear Heqstart. generalize dependent start. 
+      induction v; intros.
+      - auto.
+      - simpl. epose proof (IHv _ _ (start $ convert_term h)%ml _). clear IHv.
+        apply H1.
+      Unshelve.
+        intros. apply IH. now constructor 2. auto.
+        simpl in H. now apply notin_app_r in H.
+        simpl in H. apply notin_app_l in H. apply IH in H.
+        simpl. intro. apply elem_of_union in H1; inversion H1; contradiction.
+        constructor.
+  Qed.
 
   Theorem form_vars_free_vars_notin :
     forall φ x, ~List.In x (form_vars φ) -> x ∉ (free_evars (convert_form φ)).
   Proof.
     induction φ; intros; auto.
     * intro. inversion H0.
-    * intro. admit. (* TODO: Technical, use term_vars_free_vars_notin *)
+    * simpl in H. simpl. 
+      remember (@patt_sym sig (sym_pred P)) as start.
+      assert (x ∉ free_evars start) by now rewrite Heqstart.
+      clear Heqstart. generalize dependent start. 
+      induction v; intros.
+      - auto.
+      - simpl. epose proof (IHv _ (start $ convert_term h)%ml _). clear IHv.
+        apply H1.
+      Unshelve.
+        simpl in H. now apply notin_app_r in H.
+        simpl in H. apply notin_app_l in H. apply term_vars_free_vars_notin in H.
+        simpl. intro. apply elem_of_union in H1; inversion H1; contradiction.
     * simpl in *. apply notin_app_r in H as H'. apply notin_app_l in H.
       apply IHφ1 in H. apply IHφ2 in H'.
       apply sets.not_elem_of_union. auto.
-  Admitted.
+  Qed.
 
   Theorem bevar_subst_corr_term :
     forall b t n, convert_term (bsubst_term b t n) = 
@@ -727,33 +868,105 @@ Section FOL_ML_correspondence.
     apply conj_intro_meta; auto.
   Qed.
 
+  Lemma patt_iff_implies_equal :
+    forall φ1 φ2 Γ, is_true (well_formed φ1) -> is_true (well_formed φ2) ->
+    Γ ⊢_ML (φ1 <---> φ2) -> Γ ⊢_ML (patt_equal φ1 φ2).
+  Proof.
+    intros. Print Application_context. Check A_implies_not_not_A_ctx. Print patt_total.
+    epose proof (A_implies_not_not_A_ctx Γ (φ1 <---> φ2) (ctx_app_r box _)). 
+    apply H2; auto. unfold patt_iff, patt_and, patt_or, patt_not.
+    unfold well_formed, well_formed_closed in *.
+    apply andb_true_iff in H. apply andb_true_iff in H0. destruct H, H0. cbn.
+    now rewrite H, H0, H3, H4.
+    Unshelve.
+    auto.
+  Qed.
+
   Lemma patt_equal_refl :
-    forall φ Γ, 
+    forall φ Γ, is_true (well_formed φ) ->
     Γ ⊢_ML patt_equal φ φ.
-  Admitted.
+  Proof.
+    intros. pose proof (pf_iff_equiv_refl Γ φ H).
+    apply patt_iff_implies_equal in H0; auto.
+  Qed.
 
   (*******************************************************)
 
   (* Most important lemmas: *)
-  Proposition term_functionality :
-    forall t Γ, wf_term t 0 ->
-      Γ ⊢_ML patt_exists (patt_equal (convert_term t) (patt_bound_evar 0)).
-  Proof.
-    induction t using term_ind; intros.
-    * simpl.
-      pose proof (Ex_quan Γ (patt_equal (patt_free_evar x) (patt_bound_evar 0)) x).
-      simpl in H0. eapply Modus_ponens. 4: exact H0.
-      all: auto.
-      apply patt_equal_refl.
-    * inversion H. inversion H1.
-    * admit.
-  Admitted.
-  
   Lemma exists_functional_subst :
     forall φ φ' Γ, 
       Γ ⊢_ML patt_imp (patt_and (instantiate (patt_exists φ) φ') (patt_exists (patt_equal φ' (patt_bound_evar 0)))) (patt_exists φ).
   Proof.
   
+  Admitted.
+
+  Lemma forall_functional_subst :
+    forall φ φ' Γ, 
+      Γ ⊢_ML patt_imp (patt_and (patt_forall φ) (patt_exists (patt_equal φ' (patt_bound_evar 0)))) (bevar_subst φ φ' 0).
+  Proof.
+  
+  Admitted.
+
+  Theorem ax_in :
+    forall Γ F, Ensembles.In _ (from_FOL_theory Γ) (axiom F).
+  Proof.
+    induction Γ; intros.
+    * simpl. unfold base_FOL_theory. econstructor.
+      reflexivity.
+    * simpl. apply Ensembles.Union_intror. apply IHΓ.
+  Qed.
+
+  Theorem ax_wf :
+    forall F, is_true (well_formed (axiom F)).
+  Proof.
+    unfold axiom. intros.
+    break_match_goal.
+    * unfold Definedness.axiom. destruct name. simpl. constructor.
+    * clear Heqa. remember (ar_funs f) as N. clear HeqN.
+      induction N.
+      - simpl. constructor.
+      - cbn. admit. (* TODO: technical *)
+  Admitted.
+
+  Proposition term_functionality :
+    forall t Γ, wf_term t 0 ->
+      from_FOL_theory Γ ⊢_ML patt_exists (patt_equal (convert_term t) (patt_bound_evar 0)).
+  Proof.
+    induction t; intros.
+    * simpl.
+      pose proof (Ex_quan (from_FOL_theory Γ ) (patt_equal (patt_free_evar x) (patt_bound_evar 0)) x).
+      simpl in H0. eapply Modus_ponens. 4: exact H0.
+      all: auto.
+      apply patt_equal_refl.
+    * inversion H. inversion H1.
+    * assert (from_FOL_theory Γ ⊢_ML axiom (AxFun F)). {
+        apply hypothesis. apply ax_wf. apply ax_in.
+      } simpl in H0.
+      simpl. remember (@patt_sym sig (sym_fun F)) as start.
+      clear Heqstart. generalize dependent start.
+      assert (Forall (λ t : term, wf_term t 0) v). {
+        inversion H. simpl_existT. now subst.
+      } revert H0. clear H. induction v; intros.
+      - cbn. simpl in H1. exact H1.
+      - cbn in *. eapply (IHv _ _ (start $ convert_term h)%ml).
+        clear IHv. inversion H0. simpl_existT. subst.
+        specialize (IH h ltac:(constructor) Γ H4).
+        remember (add_forall_prefix n
+            (ex ,
+             patt_equal
+               (List.fold_left
+                  (λ (Acc : Pattern) (x : nat), (Acc $ patt_bound_evar x)%ml)
+                  (make_list1 n) (start $ patt_bound_evar (S n))%ml)
+               BoundVarSugar.b0)) as A.
+        pose proof (forall_functional_subst A (convert_term h) (from_FOL_theory Γ)).
+        assert (from_FOL_theory Γ ⊢_ML (all , A and ex , patt_equal (convert_term h) BoundVarSugar.b0 )). { 
+          apply conj_intro_meta; auto.
+          - admit. (* TODO: technical, well_formedness *)
+          - admit. (* TODO: technical, well_formedness *)
+        }
+        apply Modus_ponens in H; auto. 2-3: admit. (* TODO: technical, well_formedness *)
+        simpl in H.
+        admit. 
   Admitted.
 
   Theorem arrow_1 : forall (φ : form) (Γ : list form), 
@@ -769,7 +982,7 @@ Section FOL_ML_correspondence.
     * eapply Modus_ponens. 3: exact IHIH1. 3: exact IHIH2. all: auto.
       inversion H0. subst. auto.
     * simpl.
-      epose proof (term_functionality t (from_FOL_theory Γ) H0).
+      epose proof (term_functionality t Γ H0).
       pose proof (exists_functional_subst (convert_form φ) (convert_term t) (from_FOL_theory Γ)).
       simpl in H1. rewrite bevar_subst_corr_form.
       eapply and_impl_patt2. 4: exact H1. 4: exact H2.
