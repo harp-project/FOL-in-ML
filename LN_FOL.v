@@ -10,7 +10,7 @@ Require Export extralibrary
                FunctionalExtensionality
                Program.Equality.
 From stdpp Require Import countable.
-Require Export Vector PeanoNat String.
+Require Export Vector PeanoNat String Arith.Lt.
 Print Pattern.
 
 Ltac break_match_hyp :=
@@ -424,7 +424,7 @@ Section semantics.
       1, 3-4: left; rewrite sat_impl; intros; auto.
       congruence.
       right. rewrite sat_impl. intros. auto.
-    * admit. (* TODO: technical, using size based induction *)
+    * rewrite sat_exs. admit. (* TODO: not trivial, maybe using size based induction *)
   Admitted.
 
 End semantics.
@@ -501,7 +501,9 @@ Section soundness_completeness.
     * unfold valid in *.
       apply IHHilbert_proof_sys1 in H3 as IH1.
       apply IHHilbert_proof_sys2 in H3 as IH2. rewrite sat_impl in IH2. now apply IH2.
-    * rewrite sat_impl, sat_exs. intros. admit. (* TODO... *)
+    * rewrite sat_impl, sat_exs. intros.
+      exists (eval D fail rho t).
+      admit. (* TODO... *)
     * rewrite sat_impl, sat_exs. intros. unfold valid in *.
       apply IHHilbert_proof_sys in H3. rewrite sat_impl in H3. apply H3.
       destruct H4. simpl in H4.
@@ -623,15 +625,15 @@ Section FOL_ML_correspondence.
   Notation "Γ ⊢_FOL form" := (Hilbert_proof_sys Γ form) (at level 50).
   Notation "Γ ⊢_ML form" := (ML_proof_system Γ form) (at level 50).
 
-  Theorem wf_term_FOL_ML : forall t n,
-    wf_term t n -> is_true (well_formed_closed_aux (convert_term t) n 0).
+  Theorem wf_term_FOL_ML : forall t n m,
+    wf_term t n -> is_true (well_formed_closed_aux (convert_term t) n m).
   Proof.
     induction t using term_ind; intros.
     * constructor.
     * simpl. inversion H. now apply Nat.ltb_lt.
     * simpl. inversion H. simpl_existT. subst. clear H. 
       remember (@patt_sym sig (sym_fun F)) as start.
-      assert (is_true (well_formed_closed_aux start n 0)). { rewrite Heqstart. auto. }
+      assert (is_true (well_formed_closed_aux start n m)). { rewrite Heqstart. auto. }
       clear Heqstart. generalize dependent start. induction v.
       - simpl. auto.
       - simpl. inversion H3. simpl_existT. subst. intros.
@@ -640,13 +642,13 @@ Section FOL_ML_correspondence.
     Unshelve. intros. apply IH. now constructor 2. auto.
   Qed.
 
-  Theorem wf_aux_FOL_ML : forall φ n,
-    wf_form φ n -> is_true (well_formed_closed_aux (convert_form φ) n 0).
+  Theorem wf_aux_FOL_ML : forall φ n m,
+    wf_form φ n -> is_true (well_formed_closed_aux (convert_form φ) n m).
   Proof.
     induction φ; intros; auto.
     * simpl. inversion H. simpl_existT. subst. clear H.
       remember (@patt_sym sig (sym_pred P)) as start.
-      assert (is_true (well_formed_closed_aux start n 0)). { rewrite Heqstart. auto. }
+      assert (is_true (well_formed_closed_aux start n m)). { rewrite Heqstart. auto. }
       clear Heqstart. generalize dependent start. induction v.
       - simpl. auto.
       - simpl. inversion H3. simpl_existT. subst. intros.
@@ -713,7 +715,105 @@ Section FOL_ML_correspondence.
   Print exists_quantify.
   Print evar_quantify.
   Print quantify_form.
-   Theorem quantify_term_correspondence :
+
+  (** TO ML *)
+  Theorem double_evar_quantify φ : forall x n,
+    evar_quantify x n (evar_quantify x n φ) = evar_quantify x n φ.
+  Proof.
+    induction φ; intros; simpl; auto.
+    * break_match_goal; simpl; auto. rewrite Heqb. auto.
+    * now rewrite IHφ1, IHφ2.
+    * now rewrite IHφ1, IHφ2.
+    * now rewrite IHφ.
+    * now rewrite IHφ.
+  Qed.
+
+  (** TO ML *)
+  Lemma bevar_subst_identity φ : forall ψ n k m,
+    m >= n -> is_true (well_formed_closed_aux φ n k)
+  ->
+    bevar_subst φ ψ m = φ.
+  Proof.
+    induction φ; intros; simpl; auto.
+    * simpl in H0. break_match_goal; auto. apply NPeano.Nat.ltb_lt in H0. lia.
+    * simpl in H0. apply eq_sym, andb_true_eq in H0. destruct H0. erewrite IHφ1, IHφ2.
+      3: apply eq_sym, H1.
+      4: apply eq_sym, H0. all: auto.
+    * simpl in H0. apply eq_sym, andb_true_eq in H0. destruct H0. erewrite IHφ1, IHφ2.
+      3: apply eq_sym, H1.
+      4: apply eq_sym, H0. all: auto.
+    * simpl in H0. erewrite IHφ. 3: apply H0. auto. lia.
+    * simpl in H0. erewrite IHφ. 3: apply H0. all: auto.
+  Qed.
+
+  (** TO ML *)
+  Lemma well_formed_aux_increase φ: forall n m n' m', n' >= n -> m' >= m ->
+    is_true (well_formed_closed_aux φ n m) ->
+    is_true (well_formed_closed_aux φ n' m').
+  Proof.
+    induction φ; intros; simpl; auto.
+    * simpl in H1. apply NPeano.Nat.ltb_lt in H1. apply NPeano.Nat.ltb_lt. lia.
+    * simpl in H1. apply NPeano.Nat.ltb_lt in H1. apply NPeano.Nat.ltb_lt. lia.
+    * simpl in H1. apply eq_sym, andb_true_eq in H1. destruct H1.
+      erewrite IHφ1, IHφ2. auto. 3: apply eq_sym, H2. 5: apply eq_sym, H1.
+      all: lia.
+    * simpl in H1. apply eq_sym, andb_true_eq in H1. destruct H1.
+      erewrite IHφ1, IHφ2. auto. 3: apply eq_sym, H2. 5: apply eq_sym, H1.
+      all: lia.
+    * simpl in H1. erewrite IHφ. 4: exact H1. all: auto; lia.
+    * simpl in H1. erewrite IHφ. 4: exact H1. all: auto; lia.
+  Qed.
+
+  (** TO ML *)
+  Theorem double_evar_bevar_subst φ : forall ψ n k,
+    is_true (well_formed_closed_aux ψ n k) ->
+    bevar_subst (bevar_subst φ ψ n) ψ n = bevar_subst φ ψ n.
+  Proof.
+    induction φ; intros; simpl; auto.
+    * break_match_goal; simpl; auto.
+      - rewrite Heqc. auto.
+      - erewrite bevar_subst_identity. 3: exact H. all: auto. 
+      - rewrite Heqc. auto.
+    * erewrite IHφ1, IHφ2; eauto.
+    * erewrite IHφ1, IHφ2; eauto.
+    * erewrite IHφ. auto. eapply well_formed_aux_increase. 3: exact H. lia. auto.
+    * erewrite IHφ. auto. eapply well_formed_aux_increase. 3: exact H. lia. auto.
+  Qed.
+
+  Lemma pointwise_fold : forall n0 (v : vec term n0) start (F : Pattern -> Pattern),
+    (forall (p1 p2 : Pattern), F (patt_app p1 p2) = patt_app (F p1) (F p2)) ->
+    F (fold_left (λ (Acc : Pattern) (t : term), (Acc $ convert_term t)%ml)
+     start v) =
+  (fold_left (λ (Acc : Pattern) (t : term), (Acc $ F (convert_term t))%ml)
+     (F start) v).
+  Proof.
+    induction v; intros.
+    * simpl. auto.
+    * simpl. rewrite IHv, H. auto. apply H.
+  Qed.
+
+  Corollary evar_quantify_fold : forall n0 (v : vec term n0) start x n,
+    evar_quantify x n (fold_left (λ (Acc : Pattern) (t : term), (Acc $ convert_term t)%ml)
+     start v) =
+  (fold_left (λ (Acc : Pattern) (t : term), (Acc $ evar_quantify x n (convert_term t))%ml)
+     (evar_quantify x n start) v).
+  Proof.
+    intros. apply pointwise_fold. intros. auto.
+  Qed.
+
+  (** This is boiler-plate *)
+  Corollary bevar_subst_fold : forall n0 (v : vec term n0) start x n,
+    bevar_subst (fold_left (λ (Acc : Pattern) (t : term), (Acc $ convert_term t)%ml)
+     start v) x n =
+  (fold_left (λ (Acc : Pattern) (t : term), (Acc $ bevar_subst (convert_term t) x n)%ml)
+     (bevar_subst start x n) v).
+  Proof.
+    induction v; intros.
+    * simpl. auto.
+    * simpl. rewrite IHv. auto.
+  Qed.
+
+  Theorem quantify_term_correspondence :
     forall t n x, convert_term (quantify_term t x n) = 
                   evar_quantify x n (convert_term t).
   Proof.
@@ -725,24 +825,31 @@ Section FOL_ML_correspondence.
       clear Heqstart.
       generalize dependent start.
       induction v; intros; simpl; auto.
-      rewrite IHv, IH.
-  Admitted.
+      rewrite IHv. do 2 rewrite evar_quantify_fold.
+      simpl. rewrite IH, double_evar_quantify. auto.
+      - constructor.
+      - intros. apply IH. constructor 2; auto.
+      - simpl. rewrite <- H, IH, double_evar_quantify; auto. constructor.
+  Qed.
 
   Theorem quantify_form_correspondence :
     forall φ n x, convert_form (quantify_form φ x n) = 
                   evar_quantify x n (convert_form φ).
   Proof.
     induction φ; intros; auto; cbn.
-    * admit. (* TODO: Technical, use quantify_term_correspondence *)
+    * remember (@patt_sym sig (sym_pred P)) as start.
+      rewrite fold_left_map.
+      assert (start = evar_quantify x n start) by now rewrite Heqstart.
+      clear Heqstart.
+      generalize dependent start.
+      induction v; intros; simpl; auto.
+      rewrite IHv. do 2 rewrite evar_quantify_fold.
+      simpl. rewrite quantify_term_correspondence, double_evar_quantify. auto.
+      - simpl. rewrite <- H, quantify_term_correspondence, double_evar_quantify; auto.
     * now rewrite IHφ1, IHφ2.
     * now rewrite IHφ.
-  Admitted.
+  Qed.
 
-  (* Theorem form_vars_free_vars_in :
-    forall φ x, List.In x (form_vars φ) -> x ∈ (free_evars (convert_form φ)).
-  Proof.
-  
-  Admitted. *)
   Theorem term_vars_free_vars_notin :
     forall t x, ~List.In x (term_vars t) -> x ∉ (free_evars (convert_term t)).
   Proof.
@@ -788,25 +895,58 @@ Section FOL_ML_correspondence.
   Qed.
 
   Theorem bevar_subst_corr_term :
-    forall b t n, convert_term (bsubst_term b t n) = 
+    forall b t n, wf_term t n ->
+                  convert_term (bsubst_term b t n) = 
                   bevar_subst (convert_term b) (convert_term t) n.
   Proof.
     induction b; intros; auto.
     * simpl. now break_match_goal.
-    * simpl. admit. (* TODO: technical *)
-  Admitted.
+    * simpl. remember (@patt_sym sig (sym_fun F)) as start.
+      rewrite fold_left_map.
+      assert (start = bevar_subst start (convert_term t) n) by now rewrite Heqstart.
+      clear Heqstart.
+      generalize dependent start.
+      induction v; intros; simpl; auto.
+      rewrite IHv. do 2 rewrite bevar_subst_fold.
+      simpl. erewrite IH, double_evar_bevar_subst. auto.
+      - apply wf_term_FOL_ML. apply H.
+      - constructor.
+      - intros. apply H.
+      - intros. apply IH. constructor 2; auto. auto.
+      - simpl. erewrite <- H0, IH, double_evar_bevar_subst; auto.
+        apply wf_term_FOL_ML. auto.
+        constructor.
+    Unshelve. all: exact 0.
+  Qed.
 
   Theorem bevar_subst_corr_form :
-    forall φ t n, convert_form (bsubst_form φ t n) = 
+    forall φ t n, wf_term t n ->
+                  convert_form (bsubst_form φ t n) = 
                   bevar_subst (convert_form φ) (convert_term t) n.
   Proof.
     induction φ; intros; auto.
-    * admit. (* TODO: technical, with bevar_subst_corr_term *)
+    * simpl.
+      remember (@patt_sym sig (sym_pred P)) as start.
+      rewrite fold_left_map.
+      assert (start = bevar_subst start (convert_term t) n) by now rewrite Heqstart.
+      clear Heqstart. revert H.
+      generalize dependent start.
+      induction v; intros; simpl; auto.
+      rewrite IHv. do 2 rewrite bevar_subst_fold.
+      simpl. erewrite bevar_subst_corr_term, double_evar_bevar_subst. auto.
+      - apply wf_term_FOL_ML. auto.
+      - auto.
+      - intros. rewrite bevar_subst_corr_term; auto.
+        simpl. erewrite double_evar_bevar_subst. rewrite <- H0. auto.
+        apply wf_term_FOL_ML. auto.
+      - auto.
     * simpl. now rewrite IHφ1, IHφ2.
-    * simpl. now rewrite IHφ.
-  Admitted.
+    * simpl. rewrite IHφ. auto. eapply wf_increase_term. apply H. lia.
+    Unshelve. all: exact 0.
+  Qed.
 
   (*******************************************************)
+  (** TO ML *)
   (* This has to go to FOL helpers *)
   Lemma conj_intro_meta_partial :
   ∀ (Γ : Theory) (A B : Pattern),
@@ -893,6 +1033,7 @@ Section FOL_ML_correspondence.
   (*******************************************************)
 
   (* Most important lemmas: *)
+  (** TO ML *)
   Lemma exists_functional_subst :
     forall φ φ' Γ, 
       Γ ⊢_ML patt_imp (patt_and (instantiate (patt_exists φ) φ') (patt_exists (patt_equal φ' (patt_bound_evar 0)))) (patt_exists φ).
@@ -900,6 +1041,7 @@ Section FOL_ML_correspondence.
   
   Admitted.
 
+  (** TO ML *)
   Lemma forall_functional_subst :
     forall φ φ' Γ, 
       Γ ⊢_ML patt_imp (patt_and (patt_forall φ) (patt_exists (patt_equal φ' (patt_bound_evar 0)))) (bevar_subst φ φ' 0).
@@ -916,17 +1058,201 @@ Section FOL_ML_correspondence.
     * simpl. apply Ensembles.Union_intror. apply IHΓ.
   Qed.
 
+  Lemma add_forall_prefix_subst : forall n φ ψ m,
+    bevar_subst (add_forall_prefix n φ) ψ m = add_forall_prefix n (bevar_subst φ ψ (m + n)).
+  Proof.
+    induction n; intros.
+    * cbn. auto.
+    * simpl. rewrite IHn, Nat.add_succ_comm. auto.
+  Qed.
+
+  Lemma subst_make_list : forall n m ψ start, m > n ->
+    bevar_subst
+       (List.fold_left
+          (λ (Acc : Pattern) (x : nat),
+             (Acc $ patt_bound_evar x)%ml) 
+          (make_list1 n) start)
+       ψ m =
+    (List.fold_left
+          (λ (Acc : Pattern) (x : nat),
+             (Acc $ patt_bound_evar x)%ml) 
+          (make_list1 n) (bevar_subst start ψ m)).
+  Proof.
+    induction n; intros; cbn; auto.
+    rewrite IHn. 2: lia. cbn. break_match_goal.
+    * congruence.
+    * lia.
+    * auto.
+  Qed.
+
+  (** these lemmas should go to the other wf lemmas in ML *)
+  (** TO ML *)
+  Inductive mu_free : Pattern -> Prop :=
+  | free_evar_mu_free x : mu_free (patt_free_evar x)
+  | free_svar_mu_free x : mu_free (patt_free_svar x)
+  | bound_evar_mu_free x : mu_free (patt_bound_evar x)
+  | bound_svar_mu_free x : mu_free (patt_bound_svar x)
+  | sym_mu_free x : mu_free (patt_sym x)
+  | bott_mu_free : mu_free (patt_bott)
+  | app_mu_free p1 p2 : 
+    mu_free p1 -> mu_free p2
+   ->
+    mu_free (patt_app p1 p2)
+  | imp_mu_free p1 p2 : 
+    mu_free p1 -> mu_free p2
+   ->
+    mu_free (patt_imp p1 p2)
+  | exs_mu_free p :
+    mu_free p
+   ->
+    mu_free (patt_exists p)
+  .
+
+  Lemma term_mu_free :
+    forall t, mu_free (convert_term t).
+  Proof.
+    induction t.
+    1-2: constructor.
+    simpl. remember (@patt_sym sig (sym_fun F)) as start.
+    assert (mu_free start) by (rewrite Heqstart; constructor). clear Heqstart.
+    generalize dependent start.
+    induction v; simpl.
+    * auto.
+    * intros. eapply IHv.
+      intros. apply IH. constructor 2; auto. constructor. auto. apply IH. constructor.
+  Qed.
+
+  (** TO ML *)
+  Lemma well_formed_positive_bevar_subst φ : forall n ψ,
+    mu_free φ ->
+    is_true (well_formed_positive φ) -> is_true (well_formed_positive ψ)
+  ->
+    is_true (well_formed_positive (bevar_subst φ ψ n)).
+  Proof.
+    induction φ; intros; simpl; auto.
+    2-3: inversion H; subst;
+         simpl in H0; apply eq_sym, andb_true_eq in H0; destruct H0; 
+         rewrite IHφ1, IHφ2; auto.
+    * break_match_goal; auto.
+    * inversion H. subst. rewrite IHφ; auto.
+    * inversion H.
+  Qed.
+
+  (** TO ML *)
+  Lemma well_formed_aux_bevar_subst φ : forall n m ψ,
+    is_true (well_formed_closed_aux φ (S n) m) -> is_true (well_formed_closed_aux ψ n m)
+  ->
+    is_true (well_formed_closed_aux (bevar_subst φ ψ n) n m).
+  Proof.
+    induction φ; intros; simpl; auto.
+    * break_match_goal; auto. simpl in H. simpl. apply NPeano.Nat.ltb_lt. auto.
+      simpl in H. apply NPeano.Nat.ltb_lt in H. lia.
+    * simpl in H. apply eq_sym, andb_true_eq in H. destruct H. rewrite IHφ1, IHφ2; auto.
+    * simpl in H. apply eq_sym, andb_true_eq in H. destruct H. rewrite IHφ1, IHφ2; auto.
+    * simpl. rewrite IHφ; auto.
+      eapply well_formed_aux_increase. 3: exact H0. all: lia.
+    * simpl. simpl in H. rewrite IHφ; auto.
+      eapply well_formed_aux_increase. 3: exact H0. all: lia.
+  Qed.
+
+  (** TO ML *)
+  Lemma well_formed_closed_all φ : forall n m,
+    is_true (well_formed_closed_aux (all , φ) n m)
+  <->
+    is_true (well_formed_closed_aux φ (S n) m).
+  Proof.
+    intros. simpl. do 2 rewrite andb_true_r. auto.
+  Qed.
+
+  Lemma well_formed_closed_prefix φ : forall n k m,
+    is_true (well_formed_closed_aux (add_forall_prefix n φ) k m) <-> 
+    is_true (well_formed_closed_aux φ (n + k) m).
+  Proof.
+    induction n; simpl; auto; intros.
+    do 2 rewrite andb_true_r.
+    rewrite IHn, NPeano.Nat.add_succ_r. auto.
+  Qed.
+
+  (** TO ML *)
+  Lemma well_formed_positive_all φ : 
+    is_true (well_formed_positive (all , φ))
+  <->
+    is_true (well_formed_positive φ).
+  Proof.
+    intros. simpl. do 2 rewrite andb_true_r. auto.
+  Qed.
+
+  Lemma well_formed_positive_prefix φ : forall n,
+    is_true (well_formed_positive (add_forall_prefix n φ)) <-> 
+    is_true (well_formed_positive φ).
+  Proof.
+    induction n; simpl; auto.
+    do 2 rewrite andb_true_r. auto.
+  Qed.
+
+  Lemma well_formed_closed_list n : forall start m k, m > n ->
+    is_true (well_formed_closed_aux start m k) ->
+    is_true (well_formed_closed_aux
+     (List.fold_left
+        (λ (Acc : Pattern) (x : nat), (Acc $ patt_bound_evar x)%ml)
+        (make_list1 n) start )
+     m k).
+  Proof.
+    induction n; intros; simpl; auto.
+    apply (IHn). lia. simpl. rewrite H0. simpl. apply NPeano.Nat.ltb_lt. lia.
+  Qed.
+
+  Lemma well_formed_positive_list n : forall start,
+    is_true (well_formed_positive start) ->
+    is_true (well_formed_positive
+     (List.fold_left
+        (λ (Acc : Pattern) (x : nat), (Acc $ patt_bound_evar x)%ml)
+        (make_list1 n) start)).
+  Proof.
+    induction n; intros; simpl; auto.
+    apply (IHn). simpl. rewrite H. auto.
+  Qed.
+
+  Lemma well_formed_closed_list0 n : forall start m k, m >= n ->
+    is_true (well_formed_closed_aux start m k) ->
+    is_true (well_formed_closed_aux
+     (List.fold_left
+        (λ (Acc : Pattern) (x : nat), (Acc $ patt_bound_evar x)%ml)
+        (make_list0 n) start)
+     m k).
+  Proof.
+    induction n; intros; simpl; auto.
+    apply (IHn). lia. simpl. rewrite H0. simpl. apply NPeano.Nat.ltb_lt. lia.
+  Qed.
+
+  Lemma well_formed_positive_list0 n : forall start,
+    is_true (well_formed_positive start) ->
+    is_true (well_formed_positive
+     (List.fold_left
+        (λ (Acc : Pattern) (x : nat), (Acc $ patt_bound_evar x)%ml)
+        (make_list0 n) start)).
+  Proof.
+    induction n; intros; simpl; auto.
+    apply (IHn). simpl. rewrite H. auto.
+  Qed.
+
   Theorem ax_wf :
     forall F, is_true (well_formed (axiom F)).
   Proof.
     unfold axiom. intros.
     break_match_goal.
     * unfold Definedness.axiom. destruct name. simpl. constructor.
-    * clear Heqa. remember (ar_funs f) as N. clear HeqN.
-      induction N.
-      - simpl. constructor.
-      - cbn. admit. (* TODO: technical *)
-  Admitted.
+    * unfold well_formed, well_formed_closed. apply andb_true_intro. split.
+      - apply well_formed_positive_prefix. simpl. rewrite well_formed_positive_list. auto.
+        auto.
+      - apply well_formed_closed_prefix. simpl. rewrite well_formed_closed_list.
+        simpl. auto. lia. simpl. auto.
+    * unfold well_formed, well_formed_closed. apply andb_true_intro. split.
+      - apply well_formed_positive_prefix. simpl. rewrite well_formed_positive_list0. auto.
+        auto.
+      - apply well_formed_closed_prefix. simpl. rewrite well_formed_closed_list0.
+        simpl. auto. lia. simpl. auto.
+  Qed.
 
   Proposition term_functionality :
     forall t Γ, wf_term t 0 ->
@@ -937,12 +1263,16 @@ Section FOL_ML_correspondence.
       pose proof (Ex_quan (from_FOL_theory Γ ) (patt_equal (patt_free_evar x) (patt_bound_evar 0)) x).
       simpl in H0. eapply Modus_ponens. 4: exact H0.
       all: auto.
-      apply patt_equal_refl.
+      apply patt_equal_refl. constructor.
     * inversion H. inversion H1.
     * assert (from_FOL_theory Γ ⊢_ML axiom (AxFun F)). {
         apply hypothesis. apply ax_wf. apply ax_in.
       } simpl in H0.
       simpl. remember (@patt_sym sig (sym_fun F)) as start.
+      assert (forall n ψ, bevar_subst start ψ n = start) as HIND. 
+        { intros. rewrite Heqstart. auto. }
+      assert (mu_free start) as HMUF. { rewrite Heqstart. constructor. }
+      assert (is_true (well_formed start)) as WFS. { rewrite Heqstart. auto. }
       clear Heqstart. generalize dependent start.
       assert (Forall (λ t : term, wf_term t 0) v). {
         inversion H. simpl_existT. now subst.
@@ -959,15 +1289,97 @@ Section FOL_ML_correspondence.
                   (make_list1 n) (start $ patt_bound_evar (S n))%ml)
                BoundVarSugar.b0)) as A.
         pose proof (forall_functional_subst A (convert_term h) (from_FOL_theory Γ)).
-        assert (from_FOL_theory Γ ⊢_ML (all , A and ex , patt_equal (convert_term h) BoundVarSugar.b0 )). { 
-          apply conj_intro_meta; auto.
-          - admit. (* TODO: technical, well_formedness *)
-          - admit. (* TODO: technical, well_formedness *)
+        assert (mu_free A). {
+          rewrite HeqA. clear H H5 H4 HIND H1 HeqA IH H0 h v Γ A F WFS.
+          generalize dependent start. induction n; simpl.
+          * repeat constructor. all: apply HMUF.
+          * do 3 constructor. apply IHn; constructor; auto. constructor.
+            constructor.
         }
-        apply Modus_ponens in H; auto. 2-3: admit. (* TODO: technical, well_formedness *)
+        assert (is_true (well_formed (all , A))) as WfA.
+        {
+          rewrite HeqA. clear H H5 H4 HIND H1 IH H0 h v Γ H2 HeqA A F HMUF.
+          unfold well_formed, well_formed_closed.
+          apply eq_sym, andb_true_eq in WFS. destruct WFS.
+          apply andb_true_intro. split.
+          * clear H0. apply well_formed_positive_all, well_formed_positive_prefix.
+            simpl. generalize dependent start. induction n; simpl; intros.
+            - rewrite <- H. auto.
+            - rewrite IHn; auto. simpl. rewrite <- H. auto.
+          * clear H.  apply well_formed_closed_all, well_formed_closed_prefix.
+            simpl. replace (0 <? S (n + 1)) with true.
+            2: apply eq_sym, NPeano.Nat.ltb_lt; lia.
+            repeat rewrite andb_true_r. rewrite well_formed_closed_list; auto.
+            lia. simpl. apply andb_true_intro.
+            split.
+            - eapply well_formed_aux_increase. 3: apply eq_sym, H0. all: lia.
+            - apply NPeano.Nat.ltb_lt. lia.
+        }
+        assert (from_FOL_theory Γ ⊢_ML (all , A and ex , patt_equal (convert_term h) BoundVarSugar.b0 )). {
+          apply conj_intro_meta; auto.
+          unfold well_formed. simpl. rewrite positive_term_FOL_ML.
+          unfold well_formed_closed. simpl. eapply wf_increase_term in H4.
+          eapply wf_term_FOL_ML in H4.
+          rewrite H4. auto. lia.
+        }
+        apply Modus_ponens in H; auto.
+        2: {
+          unfold well_formed in *. simpl. rewrite positive_term_FOL_ML.
+          unfold well_formed_closed in *. simpl. eapply wf_increase_term in H4.
+          eapply wf_term_FOL_ML in H4.
+          rewrite H4. apply eq_sym, andb_true_eq in WfA. destruct WfA.
+          simpl in H7, H6. do 2 rewrite andb_true_r in H6, H7.
+          rewrite <- H7, <- H6. auto. lia.
+        }
+        2: {
+          unfold well_formed in *. simpl. rewrite positive_term_FOL_ML.
+          unfold well_formed_closed in *. simpl. eapply wf_increase_term in H4 as H4'.
+          eapply wf_term_FOL_ML in H4'.
+          rewrite H4'. apply eq_sym, andb_true_eq in WfA. destruct WfA.
+          simpl in H7, H6. do 2 rewrite andb_true_r in H7, H6.
+          rewrite <- H7, <- H6. auto.
+          rewrite well_formed_positive_bevar_subst; auto.
+          2: apply positive_term_FOL_ML. 2: lia. simpl.
+          apply well_formed_aux_bevar_subst; auto. apply wf_term_FOL_ML; auto.
+        }
         simpl in H.
-        admit. 
-  Admitted.
+        rewrite HeqA, add_forall_prefix_subst in H.
+        simpl Nat.add in H.
+        replace (bevar_subst
+              (ex ,
+               @patt_equal sig definedness_syntax
+                 (List.fold_left
+                    (λ (Acc : Pattern) (x : nat),
+                       (Acc $ patt_bound_evar x)%ml) 
+                    (make_list1 n) (start $ patt_bound_evar (S n))%ml)
+                 BoundVarSugar.b0) (convert_term h) n) with
+             ((ex ,
+               @patt_equal sig definedness_syntax
+                 (bevar_subst (List.fold_left
+                    (λ (Acc : Pattern) (x : nat),
+                       (Acc $ patt_bound_evar x)%ml) 
+                    (make_list1 n) (start $ patt_bound_evar (S n))%ml) (convert_term h) (S n))
+                 BoundVarSugar.b0)) in H by auto.
+        rewrite subst_make_list in H. 2: lia.
+        simpl in H. rewrite HIND in H. break_match_hyp.
+        + lia.
+        + exact H.
+        + lia.
+
+        (** asserted hypotheses *)
+        + intros. simpl. rewrite HIND. erewrite bevar_subst_identity.
+          auto. 2: { apply wf_term_FOL_ML. inversion H0. simpl_existT. subst. apply H4. }
+          lia.
+        + constructor. auto.
+          apply term_mu_free.
+        + unfold well_formed, well_formed_closed in *.
+          simpl. apply eq_sym, andb_true_eq in WFS. destruct WFS. rewrite <- H, <- H2.
+          simpl. apply wf_FOL_ML_term. inversion H0. simpl_existT. subst. apply H6.
+  Unshelve.
+    ** intros. apply IH; auto. constructor 2; auto.
+    ** inversion H0. simpl_existT. subst. auto.
+    ** exact 0.
+  Qed.
 
   Theorem arrow_1 : forall (φ : form) (Γ : list form), 
     Γ ⊢_FOL φ
@@ -994,7 +1406,7 @@ Section FOL_ML_correspondence.
         + unfold well_formed_closed. simpl.
           rewrite wf_term_FOL_ML; auto. eapply wf_increase_term. exact H0. lia.
       - rewrite <- bevar_subst_corr_form. apply wf_FOL_ML. inversion H. subst.
-        apply wf_form_subst; auto.
+        apply wf_form_subst; auto. auto.
     * simpl. rewrite quantify_form_correspondence. eapply Ex_gen; auto.
       apply form_vars_free_vars_notin. auto.
   Qed.
