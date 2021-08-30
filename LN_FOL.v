@@ -94,11 +94,7 @@ Class FOL_variables :=
     vars : Set;
     var_eqdec : EqDecision vars;
     var_countable : Countable vars;
-    var_fresh : list vars -> vars;
-    var_fresh_is_fresh : 
-      forall l, ~List.In (var_fresh l) l;
-    nvar : string -> vars;
-    nvar_inj : forall (s1 s2 : string), nvar s1 = nvar s2 -> s1 = s2;
+    var_infinite : Infinite vars;
   }.
 
 Coercion preds : preds_signature >-> Sortclass.
@@ -107,6 +103,8 @@ Section fix_signature.
 
   Context {Σ_vars : FOL_variables}.
   Context {Σ_funcs : funcs_signature}.
+  
+  Definition var_fresh (l : list vars) : vars := @infinite_fresh _ var_infinite l.
 
   Unset Elimination Schemes.
   Inductive term  : Set :=
@@ -398,16 +396,21 @@ Section semantics.
 
     Notation "rho ⊨ phi" := (sat rho phi) (at level 20).
 
-  Theorem sat_dec : forall φ ρ, {ρ ⊨ φ} + {~ ρ ⊨ φ}.
+  Theorem sat_dec : forall sz φ, form_size φ <= sz -> forall ρ, {ρ ⊨ φ} + {~ ρ ⊨ φ}.
   Proof.
-    induction φ; intros ρ.
+    induction sz; intros φ H; destruct φ; simpl in H; try lia; intros ρ.
     * right. auto.
     * rewrite sat_atom. apply bool_dec.
-    * destruct (IHφ1 ρ), (IHφ2 ρ).
+    * right. auto.
+    * rewrite sat_atom. apply bool_dec.
+    * destruct (IHsz φ1 ltac:(lia) ρ), (IHsz φ2 ltac:(lia) ρ).
       1, 3-4: left; rewrite sat_impl; intros; auto.
       congruence.
       right. rewrite sat_impl. intros. auto.
-    * rewrite sat_exs. admit. (* TODO: not trivial, maybe using size based induction *)
+    * rewrite sat_exs. simpl.
+      epose proof (IHsz (bsubst_form φ (fvar (var_fresh (form_vars φ))) 0) _).
+      Search "ex" not.
+      admit. (* TODO: not trivial, maybe using size based induction *)
   Abort.
 
 End semantics.
@@ -480,8 +483,12 @@ Section soundness_completeness.
       apply IHHilbert_proof_sys1 in H1 as IH1.
       apply IHHilbert_proof_sys2 in H1 as IH2. rewrite sat_impl in IH2. now apply IH2.
     * rewrite -> sat_impl, -> sat_exs. intros.
-      exists (eval D fail rho t).
-      admit. (* TODO... *)
+      exists (eval D fail rho t). clear H.
+      generalize dependent φ. induction φ; intros; auto.
+      - admit.
+      - admit.
+      - admit.
+      (* TODO... *)
     * rewrite -> sat_impl, -> sat_exs. intros. unfold valid in *.
       apply IHHilbert_proof_sys in H0. rewrite sat_impl in H0. apply H0.
       destruct H1. simpl in H1.
@@ -513,19 +520,13 @@ Section FOL_ML_correspondence.
   Instance FOLVars : MLVariables := 
   {|
     Syntax.evar := vars;
+    Syntax.svar := vars;
     evar_eqdec := var_eqdec;
     svar_eqdec := var_eqdec;
     evar_countable := var_countable;
     svar_countable := var_countable;
-    Syntax.svar := vars;
-    evar_fresh := var_fresh;
-    evar_fresh_is_fresh := var_fresh_is_fresh;
-    svar_fresh := var_fresh;
-    svar_fresh_is_fresh := var_fresh_is_fresh;
-    nevar := nvar;
-    nsvar := nvar;
-    nevar_inj := nvar_inj;
-    nsvar_inj := nvar_inj;
+    evar_infinite := var_infinite;
+    svar_infinite := var_infinite;
   |}.
   Instance sig : Signature := 
   {|
@@ -599,7 +600,7 @@ Section FOL_ML_correspondence.
   Definition base_FOL_theory : Theory := theory_of_NamedAxioms named_axioms.
 
   Definition from_FOL_theory (Γ : list form) : Theory :=
-    List.fold_right (fun x Acc => Ensembles.Union Pattern (Ensembles.Singleton Pattern (convert_form x)) Acc) base_FOL_theory Γ.
+    List.fold_right (fun x Acc => {[ convert_form x ]} ∪ Acc) base_FOL_theory Γ.
 
   Notation "Γ ⊢_FOL form" := (Hilbert_proof_sys Γ form) (at level 50).
   Notation "Γ ⊢_ML form" := (ML_proof_system Γ form) (at level 50).
@@ -675,14 +676,14 @@ Section FOL_ML_correspondence.
   Qed.
 
   Theorem in_FOL_theory : forall Γ x,
-    List.In x Γ -> Ensembles.In _ (from_FOL_theory Γ) (convert_form x).
+    List.In x Γ -> convert_form x ∈ from_FOL_theory Γ.
   Proof.
     induction Γ; intros x H.
     * inversion H.
-    * simpl. inversion H.
-      - apply Ensembles.Union_introl. subst. apply Ensembles.In_singleton.
+    * simpl. inversion H; subst.
+      - apply sets.elem_of_union_l. now apply sets.elem_of_singleton_2.
       - apply IHΓ in H0.
-        now apply Ensembles.Union_intror.
+        now apply sets.elem_of_union_r.
   Qed.
 
   Hint Resolve wf_form_FOL_ML : core.
@@ -854,12 +855,12 @@ Section FOL_ML_correspondence.
   Qed.
 
   Theorem ax_in :
-    forall Γ F, Ensembles.In _ (from_FOL_theory Γ) (axiom F).
+    forall Γ F, axiom F ∈ from_FOL_theory Γ.
   Proof.
     induction Γ; intros F.
     * simpl. unfold base_FOL_theory. econstructor.
       reflexivity.
-    * simpl. apply Ensembles.Union_intror. apply IHΓ.
+    * simpl. apply sets.elem_of_union_r. apply IHΓ.
   Qed.
 
   Lemma add_forall_prefix_subst : forall n φ ψ m,
@@ -1214,14 +1215,9 @@ Section tests.
     evar_countable := var_countable;
     svar_countable := var_countable;
     Syntax.svar := vars;
-    evar_fresh := var_fresh;
-    evar_fresh_is_fresh := var_fresh_is_fresh;
-    svar_fresh := var_fresh;
-    svar_fresh_is_fresh := var_fresh_is_fresh;
-    nevar := nvar;
-    nsvar := nvar;
-    nevar_inj := nvar_inj;
-    nsvar_inj := nvar_inj;
+    evar_infinite := var_infinite;
+    svar_infinite := var_infinite;
+
   |}.
   Instance sig2 : Signature := 
   {|
